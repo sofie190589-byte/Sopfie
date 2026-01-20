@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kostka 3D – overlay + staty + skiny (FIX AUDIO)</title>
+
+<style>
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    background:#111;
+    color:#fff;
+    font-family:Arial, sans-serif;
+    gap:14px;
+    padding:16px;
+  }
+
+  .bar{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:center;
+  }
+
+  select, button{
+    padding:10px 12px;
+    font-size:14px;
+    cursor:pointer;
+  }
+
+  .scene{
+    width:120px;
+    height:120px;
+    perspective:700px;
+    position:relative;
+  }
+
+  .cube{
+    width:100%;
+    height:100%;
+    position:relative;
+    transform-style:preserve-3d;
+    transform: translateZ(-60px) rotateX(0deg) rotateY(0deg);
+    transition: transform 1s ease-in-out;
+  }
+
+  .face{
+    position:absolute;
+    width:120px;
+    height:120px;
+    background:#fff;
+    border:2px solid #000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:48px;
+    font-weight:bold;
+    color:#000;
+    backface-visibility:hidden;
+    overflow:hidden;
+  }
+
+  .face1 { transform: rotateY(0deg) translateZ(60px); }
+  .face2 { transform: rotateY(90deg) translateZ(60px); }
+  .face3 { transform: rotateY(180deg) translateZ(60px); }
+  .face4 { transform: rotateY(-90deg) translateZ(60px); }
+  .face5 { transform: rotateX(90deg) translateZ(60px); }
+  .face6 { transform: rotateX(-90deg) translateZ(60px); }
+
+  .overlayFace{
+    position:absolute;
+    width:120px;
+    height:120px;
+    background-color: transparent;
+    border: none;
+
+    display:none;
+    pointer-events:none;
+    image-rendering: pixelated;
+
+    background-repeat:no-repeat;
+    background-position:center;
+    background-size:cover;
+
+    transform: rotateY(0deg) translateZ(61px);
+    backface-visibility:hidden;
+  }
+  .overlayFace.on{ display:block; }
+
+  @keyframes spriteRun {
+    from { background-position: 0px 0px; }
+    to   { background-position: -1536px 0px; } /* 16*96 */
+  }
+
+  #result{
+    font-size:22px;
+    min-height:28px;
+    text-align:center;
+  }
+
+  .stats{
+    width:min(360px, 92vw);
+    background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.12);
+    border-radius:12px;
+    padding:12px 14px;
+  }
+  .stats h3{
+    margin:0 0 10px 0;
+    font-size:16px;
+  }
+  .row{
+    display:flex;
+    justify-content:space-between;
+    padding:4px 0;
+    border-bottom:1px dashed rgba(255,255,255,0.12);
+    font-size:14px;
+  }
+  .row:last-child{ border-bottom:none; }
+  .muted{ opacity:.8; font-size:12px; margin-top:8px; line-height:1.3; }
+
+  /* mały komunikat o audio */
+  #audioHint{
+    font-size:12px;
+    opacity:.85;
+    max-width:420px;
+    text-align:center;
+    line-height:1.35;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="bar">
+  <select id="skin">
+    <option value="classic">Classic (die.gif)</option>
+    <option value="skin2">Skin 2 (die2.gif)</option>
+    <option value="skin3">Skin 3 (die3.gif)</option>
+  </select>
+
+  <select id="mode">
+    <option value="gif">Animacja: GIF</option>
+    <option value="sprite">Animacja: SPRITE (die_sprite.png)</option>
+  </select>
+
+  <button id="btn" onclick="rollDice()">Rzuć kostką 🎲</button>
+</div>
+
+<div class="scene">
+  <div class="cube" id="cube">
+    <div class="overlayFace" id="overlay"></div>
+
+    <div class="face face1"><span>1</span></div>
+    <div class="face face2"><span>2</span></div>
+    <div class="face face3"><span>3</span></div>
+    <div class="face face4"><span>4</span></div>
+    <div class="face face5"><span>5</span></div>
+    <div class="face face6"><span>6</span></div>
+  </div>
+</div>
+
+<div id="result"></div>
+<div id="audioHint"></div>
+
+<div class="stats">
+  <h3>Statystyki rzutów</h3>
+  <div id="statsRows"></div>
+  <div class="muted">
+    Używam RNG
+  </div>
+</div>
+
+<audio id="diceSound" src="dice.mp3" preload="auto"></audio>
+
+<script>
+/* ===== Skórki ===== */
+var SKINS = {
+  classic: { gif: "die.gif",  sprite: "die_sprite.png" },
+  skin2:   { gif: "die2.gif", sprite: "die2_sprite.png" },
+  skin3:   { gif: "die3.gif", sprite: "die3_sprite.png" }
+};
+
+/* ===== RNG worek ===== */
+var bag = [];
+function refillBag(){
+  bag = [1,2,3,4,5,6];
+  for (var i = bag.length - 1; i > 0; i--){
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = bag[i]; bag[i] = bag[j]; bag[j] = t;
+  }
+}
+refillBag();
+
+/* ===== Elementy ===== */
+var cube = document.getElementById("cube");
+var overlay = document.getElementById("overlay");
+var result = document.getElementById("result");
+var sound = document.getElementById("diceSound");
+var btn = document.getElementById("btn");
+var skinSel = document.getElementById("skin");
+var modeSel = document.getElementById("mode");
+var statsRows = document.getElementById("statsRows");
+var audioHint = document.getElementById("audioHint");
+
+/* ===== Statystyki ===== */
+var counts = [0,0,0,0,0,0,0]; // 1..6
+function renderStats(){
+  var total = 0;
+  for (var i=1;i<=6;i++) total += counts[i];
+
+  var html = "";
+  for (var k=1;k<=6;k++){
+    var c = counts[k];
+    var pct = total ? Math.round((c/total)*100) : 0;
+    html += '<div class="row"><div>🎲 ' + k + '</div><div>' + c +
+            ' <span style="opacity:.8">(' + pct + '%)</span></div></div>';
+  }
+  html += '<div class="row"><div><b>Suma</b></div><div><b>' + total + '</b></div></div>';
+  statsRows.innerHTML = html;
+}
+renderStats();
+
+/* ===== Rotacje ===== */
+var targetRot = {
+  1: { x: 0,   y: 0   },
+  2: { x: 0,   y: -90 },
+  3: { x: 0,   y: 180 },
+  4: { x: 0,   y: 90  },
+  5: { x: -90, y: 0   },
+  6: { x: 90,  y: 0   }
+};
+
+/* ===== Overlay anim ===== */
+function startOverlay(){
+  var skinKey = skinSel.value;
+  var mode = modeSel.value;
+  var skin = SKINS[skinKey] || SKINS.classic;
+
+  overlay.className = "overlayFace on";
+  overlay.style.animation = "none";
+  overlay.style.backgroundSize = "cover";
+  overlay.style.backgroundPosition = "center";
+
+  if (mode === "sprite") {
+    overlay.style.backgroundImage = 'url("' + skin.sprite + '")';
+    overlay.style.backgroundSize = "auto 100%";
+    overlay.style.backgroundPosition = "0px 0px";
+    overlay.style.animation = "spriteRun 0.7s steps(16) infinite";
+  } else {
+    overlay.style.backgroundImage = 'url("' + skin.gif + '")';
+  }
+}
+
+function stopOverlay(){
+  overlay.className = "overlayFace";
+  overlay.style.animation = "none";
+}
+
+/* ===== AUDIO: odblokowanie po pierwszej akcji ===== */
+var audioUnlocked = false;
+
+function unlockAudioOnce(){
+  if (audioUnlocked) return;
+
+  if (!sound) return;
+
+  sound.volume = 0.4;
+
+  // spróbuj zagrać "na zero", żeby przeglądarka uznała to za akcję użytkownika
+  var p = sound.play();
+  if (p && p.then){
+    p.then(function(){
+      sound.pause();
+      sound.currentTime = 0;
+      audioUnlocked = true;
+      audioHint.textContent = "🔊 Dźwięk włączony.";
+    }).catch(function(err){
+      // tu najczęściej: NotAllowedError albo plik nie znaleziony
+      audioHint.textContent =
+        "🔇 Dźwięk zablokowany albo plik dice.mp3 nie został znaleziony. " +
+        "Sprawdź czy dice.mp3 jest w tym samym folderze co HTML i ma dokładnie taką nazwę.";
+      console.log("Audio unlock error:", err);
+    });
+  }
+}
+
+/* ===== Rzut ===== */
+function rollDice(){
+  try{
+    // klucz: odblokuj audio na kliknięciu
+    unlockAudioOnce();
+
+    btn.disabled = true;
+    result.textContent = "";
+
+    if (bag.length === 0) refillBag();
+    var roll = bag.pop();
+
+    counts[roll] += 1;
+    renderStats();
+
+    // próba zagrania dźwięku (po odblokowaniu zadziała)
+    if (sound){
+      sound.currentTime = 0;
+      sound.volume = 0.4;
+      var p2 = sound.play();
+      if (p2 && p2.catch) p2.catch(function(){});
+    }
+
+    startOverlay();
+
+    var t = targetRot[roll];
+    var extraX = 360 * (2 + Math.floor(Math.random() * 3));
+    var extraY = 360 * (2 + Math.floor(Math.random() * 3));
+
+    cube.style.transform =
+      "translateZ(-60px) rotateX(" + (extraX + t.x) + "deg) rotateY(" + (extraY + t.y) + "deg)";
+
+    setTimeout(function(){
+      stopOverlay();
+      result.textContent = "🎲 Wylosowano: " + roll;
+      btn.disabled = false;
+    }, 1050);
+
+  } catch(e){
+    console.error(e);
+    result.textContent = "Błąd JS: " + e.message;
+    btn.disabled = false;
+  }
+}
+
+// (opcjonalnie) jeszcze pewniej: odblokuj też po dowolnym kliknięciu na stronie
+window.addEventListener("pointerdown", unlockAudioOnce, { once:true });
+window.addEventListener("keydown", unlockAudioOnce, { once:true });
+</script>
+
+</body>
+</html>
